@@ -1,33 +1,41 @@
 import requests, time, random, os, threading
-from datetime import datetime
 from flask import Flask
 from dotenv import load_dotenv
 
 load_dotenv()
 
 CMC_API_KEY = os.getenv("CMC_API_KEY")
-BINANCE_API_KEY = os.getenv("BINANCE_API_KEY")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
+# 🔥 4 BINANCE KEYS (auto filter empty)
+BINANCE_KEYS = [
+    os.getenv("BINANCE_API_KEY_1"),
+    os.getenv("BINANCE_API_KEY_2"),
+    os.getenv("BINANCE_API_KEY_3"),
+    os.getenv("BINANCE_API_KEY_4"),
+]
+
+BINANCE_KEYS = [k for k in BINANCE_KEYS if k]
+
 PORT = int(os.environ.get("PORT", 10000))
-POST_INTERVAL = 5400  # 3 hours
+POST_INTERVAL = 7200  # safer
 
 app = Flask(__name__)
 
 @app.route("/")
 def home():
-    return "Ultimate AI Crypto Bot Running 🚀"
+    return "Crypto Bot Running 🚀"
 
 VALID_COINS = [
     "BTC","ETH","SOL","BNB","XRP","DOGE","ADA","AVAX","LINK","DOT",
     "MATIC","LTC","TRX","ATOM","FIL","NEAR","APT","OP","ARB","INJ"
 ]
 
-LAST_POST_ID = None
+LAST_POST_IDS = [None] * len(BINANCE_KEYS)
 SEEN_COMMENTS = set()
 
-# ===================== MARKET =====================
+# ================= MARKET =================
 def get_market():
     try:
         url = "https://pro-api.coinmarketcap.com/v1/cryptocurrency/quotes/latest"
@@ -38,7 +46,7 @@ def get_market():
     except:
         return {}
 
-# ===================== INDICATORS =====================
+# ================= SIGNAL =================
 def get_signal(change):
     if change >= 5: return "🚀 STRONG BUY"
     elif change >= 2: return "📈 BUY"
@@ -53,29 +61,11 @@ def get_rsi(change):
     elif change < -2: return 35
     else: return 50
 
-def get_ema_trend(change):
+def get_ema(change):
     return "Above EMA 📈" if change > 0 else "Below EMA 📉"
 
-# ===================== NEWS =====================
-def get_crypto_news():
-    try:
-        res = requests.get("https://min-api.cryptocompare.com/data/v2/news/?lang=EN").json()
-        news = random.choice(res.get("Data", []))
-        title = news.get("title", "")
-
-        if any(x in title.lower() for x in ["bull","surge","gain"]):
-            sentiment = "Bullish 📈"
-        elif any(x in title.lower() for x in ["crash","hack","drop"]):
-            sentiment = "Bearish 📉"
-        else:
-            sentiment = "Neutral ⚖️"
-
-        return title, sentiment
-    except:
-        return "Market stable", "Neutral ⚖️"
-
-# ===================== VIRAL =====================
-def viral_hook():
+# ================= TEXT =================
+def hook():
     return random.choice([
         "🚨 BIG MOVE incoming?",
         "🔥 Market about to explode?",
@@ -84,53 +74,32 @@ def viral_hook():
         "🚀 Breakout loading..."
     ])
 
-def ai_intro():
+def intro():
     return random.choice([
         "Market structure shifting 👀",
         "Liquidity zones getting tested 🔥",
-        "Momentum building up 📊",
+        "Momentum building 📊",
         "Volatility increasing ⚡"
-    ])
-
-def urgency():
-    return random.choice([
-        "Timing matters ⏳",
-        "Move can be sharp ⚡",
-        "Watch closely 👀",
-        "High volatility zone 🔥"
     ])
 
 def cta():
     return random.choice([
-        "Bullish or bearish?",
         "Your move?",
+        "Bullish or bearish?",
         "Entering or waiting?",
-        "Your opinion?"
+        "What do you think?"
     ])
 
-# ===================== GENERATE POST =====================
+# ================= POST =================
 def generate_post():
     data = get_market()
     if not data:
-        return "⚠️ Market data unavailable", "BTC"
+        return "Market data unavailable", "BTC"
 
-    sorted_coins = sorted(
-        data.items(),
-        key=lambda x: x[1]["quote"]["USD"]["percent_change_24h"],
-        reverse=True
-    )
-
-    top = [c[0] for c in sorted_coins[:10]]
-
-    # BTC priority
-    if "BTC" in data and random.random() < 0.85:
-        others = random.sample([c for c in top if c != "BTC"], 2)
-        selected = ["BTC"] + others
-    else:
-        selected = random.sample(top, 3)
+    coins = list(data.keys())
+    selected = random.sample(coins, 3)
 
     lines, tags = [], []
-    whale = False
     up, down = 0, 0
 
     for sym in selected:
@@ -138,74 +107,70 @@ def generate_post():
             change = round(data[sym]["quote"]["USD"]["percent_change_24h"], 2)
             signal = get_signal(change)
             rsi = get_rsi(change)
-            ema = get_ema_trend(change)
+            ema = get_ema(change)
+
+            direction = "going up 📈" if change > 0 else "going down 📉"
 
             if change > 0: up += 1
             else: down += 1
 
-            if abs(change) > 5:
-                whale = True
-
-            lines.append(f"{sym}: {signal} | RSI {rsi} | {ema}")
+            lines.append(f"{sym} ${sym} is {direction} | {signal} | RSI {rsi} | {ema}")
             tags.append(f"${sym}")
 
         except:
             continue
 
-    sentiment = "Bullish 😎" if up > down else "Bearish 🐻" if down > up else "Neutral ⚖️"
-
-    news, news_sentiment = get_crypto_news()
+    sentiment = "Bullish 😎" if up > down else "Bearish 🐻"
 
     chart_coin = selected[0]
-    chart_link = f"https://www.tradingview.com/symbols/{chart_coin}USDT/"
+    chart = f"https://www.tradingview.com/symbols/{chart_coin}USDT/"
+
+    final_tag = random.choice(tags)
 
     post = f"""🚨 MARKET INTEL
 
-{viral_hook()}
+{hook()}
 
-{ai_intro()}
-
-{urgency()}
+{intro()}
 
 Sentiment: {sentiment}
 
-📰 {news}
-📊 Impact: {news_sentiment}
-
 {' | '.join(lines)}
 
-{'🐋 Whale activity detected!' if whale else ''}
-
 📊 Chart:
-{chart_link}
+{chart}
 
-💡 Strategy:
-Trade with confirmation & risk management
+💡 Trade smart & manage risk
 
 🤔 {cta()}
 
-{' '.join(tags)} #crypto #trading
+{final_tag} #crypto
 """
 
     return post, chart_coin
 
-# ===================== BINANCE =====================
-def post_binance(content):
-    global LAST_POST_ID
+# ================= BINANCE =================
+def post_binance(content, api_key, index):
     try:
         url = "https://www.binance.com/bapi/composite/v1/public/pgc/openApi/content/add"
         headers = {
-            "X-Square-OpenAPI-Key": BINANCE_API_KEY,
+            "X-Square-OpenAPI-Key": api_key,
             "Content-Type": "application/json",
             "clienttype": "binanceSkill"
         }
+
         r = requests.post(url, headers=headers, json={"bodyTextOnly": content}).json()
-        LAST_POST_ID = r.get("data", {}).get("id")
+
+        post_id = r.get("data", {}).get("id")
+        if index < len(LAST_POST_IDS):
+            LAST_POST_IDS[index] = post_id
+
         return r.get("data", {}).get("shareLink", "Post failed")
+
     except:
         return "Post failed"
 
-# ===================== TELEGRAM =====================
+# ================= TELEGRAM =================
 def send(msg):
     try:
         requests.post(
@@ -228,16 +193,18 @@ def send_image(symbol):
     except:
         pass
 
-# ===================== COMMENTS =====================
-def check_comments():
-    global LAST_POST_ID
+# ================= COMMENTS =================
+def check_comments(index):
+    if index >= len(LAST_POST_IDS):
+        return
 
-    if not LAST_POST_ID:
+    post_id = LAST_POST_IDS[index]
+    if not post_id:
         return
 
     try:
         url = "https://www.binance.com/bapi/composite/v1/public/pgc/comment/list"
-        params = {"contentId": LAST_POST_ID, "page": 1, "rows": 5}
+        params = {"contentId": post_id, "page": 1, "rows": 5}
 
         res = requests.get(url, params=params).json()
         comments = res.get("data", {}).get("list", [])
@@ -246,23 +213,32 @@ def check_comments():
             text = c.get("content", "")
             if text and text not in SEEN_COMMENTS:
                 SEEN_COMMENTS.add(text)
-                send(f"💬 Comment:\n{text}")
+                send(f"💬 Comment (Acc {index+1}):\n{text}")
 
     except:
         pass
 
-# ===================== LOOP =====================
+# ================= LOOP =================
 def run_bot():
     while True:
         try:
-            post, sym = generate_post()
-            link = post_binance(post)
+            posts = []
 
-            send(f"🚀 POSTED\n\n{post}\n\n🔗 {link}")
-            send_image(sym)
+            for i in range(len(BINANCE_KEYS)):
+                post, sym = generate_post()
+                post += f"\n\n🔥 Variant {i+1}"
+                posts.append((post, sym))
 
-            time.sleep(60)
-            check_comments()
+            for i, (post, sym) in enumerate(posts):
+                api_key = BINANCE_KEYS[i]
+
+                link = post_binance(post, api_key, i)
+
+                send(f"🚀 POSTED #{i+1}\n\n{post}\n\n🔗 {link}")
+                send_image(sym)
+
+                time.sleep(20)
+                check_comments(i)
 
         except Exception as e:
             print("ERROR:", e)
@@ -271,6 +247,6 @@ def run_bot():
 
 threading.Thread(target=run_bot).start()
 
-# ===================== SERVER =====================
+# ================= SERVER =================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=PORT)
