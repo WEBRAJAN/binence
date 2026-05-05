@@ -19,7 +19,7 @@ BINANCE_KEYS = [
 BINANCE_KEYS = [k for k in BINANCE_KEYS if k]
 
 PORT = int(os.environ.get("PORT", 10000))
-POST_INTERVAL = 7200  # safer
+POST_INTERVAL = 5400  # safer
 
 app = Flask(__name__)
 
