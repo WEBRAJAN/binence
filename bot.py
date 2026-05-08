@@ -1,252 +1,304 @@
-import requests, time, random, os, threading
+import requests
+import time
+import random
+import os
+import threading
 from flask import Flask
 from dotenv import load_dotenv
+from datetime import datetime
 
 load_dotenv()
 
+# ================= CONFIG =================
 CMC_API_KEY = os.getenv("CMC_API_KEY")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
-# 🔥 4 BINANCE KEYS (auto filter empty)
 BINANCE_KEYS = [
     os.getenv("BINANCE_API_KEY_1"),
     os.getenv("BINANCE_API_KEY_2"),
     os.getenv("BINANCE_API_KEY_3"),
-    os.getenv("BINANCE_API_KEY_4"),
+    os.getenv("BINANCE_API_KEY_4")
 ]
 
-BINANCE_KEYS = [k for k in BINANCE_KEYS if k]
+BINANCE_KEYS = [x for x in BINANCE_KEYS if x]
 
+POST_INTERVAL = 10800
 PORT = int(os.environ.get("PORT", 10000))
-POST_INTERVAL = 5400  # safer
 
 app = Flask(__name__)
 
 @app.route("/")
 def home():
-    return "Crypto Bot Running 🚀"
+    return "Mixed Style Binance Bot Running 🚀"
 
+# ================= COINS =================
 VALID_COINS = [
-    "BTC","ETH","SOL","BNB","XRP","DOGE","ADA","AVAX","LINK","DOT",
-    "MATIC","LTC","TRX","ATOM","FIL","NEAR","APT","OP","ARB","INJ"
+    "BTC","ETH","SOL","BNB","XRP",
+    "DOGE","ADA","AVAX","LINK","DOT",
+    "MATIC","LTC","TRX","ATOM","FIL",
+    "APT","ARB","INJ","OP","SUI"
 ]
 
-LAST_POST_IDS = [None] * len(BINANCE_KEYS)
-SEEN_COMMENTS = set()
-
 # ================= MARKET =================
-def get_market():
+def get_market_data():
+
     try:
-        url = "https://pro-api.coinmarketcap.com/v1/cryptocurrency/quotes/latest"
-        headers = {"X-CMC_PRO_API_KEY": CMC_API_KEY}
-        params = {"symbol": ",".join(VALID_COINS)}
-        res = requests.get(url, headers=headers, params=params).json()
-        return res.get("data", {})
-    except:
+
+        url = (
+            "https://pro-api.coinmarketcap.com/"
+            "v1/cryptocurrency/quotes/latest"
+        )
+
+        headers = {
+            "X-CMC_PRO_API_KEY": CMC_API_KEY
+        }
+
+        params = {
+            "symbol": ",".join(VALID_COINS)
+        }
+
+        response = requests.get(
+            url,
+            headers=headers,
+            params=params
+        )
+
+        data = response.json()
+
+        return data.get("data", {})
+
+    except Exception as e:
+        print("MARKET ERROR:", e)
         return {}
 
-# ================= SIGNAL =================
-def get_signal(change):
-    if change >= 5: return "🚀 STRONG BUY"
-    elif change >= 2: return "📈 BUY"
-    elif change <= -5: return "💥 STRONG SELL"
-    elif change <= -2: return "⚠️ SELL"
-    else: return "⚖️ HOLD"
+# ================= POST GENERATOR =================
+def generate_post(used_symbols):
 
-def get_rsi(change):
-    if change > 4: return 75
-    elif change > 2: return 65
-    elif change < -4: return 25
-    elif change < -2: return 35
-    else: return 50
+    data = get_market_data()
 
-def get_ema(change):
-    return "Above EMA 📈" if change > 0 else "Below EMA 📉"
-
-# ================= TEXT =================
-def hook():
-    return random.choice([
-        "🚨 BIG MOVE incoming?",
-        "🔥 Market about to explode?",
-        "👀 Smart money active",
-        "⚠️ Don't ignore this setup",
-        "🚀 Breakout loading..."
-    ])
-
-def intro():
-    return random.choice([
-        "Market structure shifting 👀",
-        "Liquidity zones getting tested 🔥",
-        "Momentum building 📊",
-        "Volatility increasing ⚡"
-    ])
-
-def cta():
-    return random.choice([
-        "Your move?",
-        "Bullish or bearish?",
-        "Entering or waiting?",
-        "What do you think?"
-    ])
-
-# ================= POST =================
-def generate_post():
-    data = get_market()
     if not data:
-        return "Market data unavailable", "BTC"
+        return "Market unavailable"
 
-    coins = list(data.keys())
-    selected = random.sample(coins, 3)
+    available = [
+        s for s in list(data.keys())
+        if s not in used_symbols
+    ]
 
-    lines, tags = [], []
-    up, down = 0, 0
+    if not available:
+        available = list(data.keys())
 
-    for sym in selected:
-        try:
-            change = round(data[sym]["quote"]["USD"]["percent_change_24h"], 2)
-            signal = get_signal(change)
-            rsi = get_rsi(change)
-            ema = get_ema(change)
+    symbol = random.choice(available)
 
-            direction = "going up 📈" if change > 0 else "going down 📉"
+    used_symbols.append(symbol)
 
-            if change > 0: up += 1
-            else: down += 1
+    try:
 
-            lines.append(f"{sym} ${sym} is {direction} | {signal} | RSI {rsi} | {ema}")
-            tags.append(f"${sym}")
+        price = round(
+            data[symbol]["quote"]["USD"]["price"],
+            2
+        )
 
-        except:
-            continue
+        change = round(
+            data[symbol]["quote"]["USD"]["percent_change_24h"],
+            2
+        )
 
-    sentiment = "Bullish 😎" if up > down else "Bearish 🐻"
+    except Exception:
+        return "Data error"
 
-    chart_coin = selected[0]
-    chart = f"https://www.tradingview.com/symbols/{chart_coin}USDT/"
+    # ================= SHORT STYLE =================
+    short_post = f"""
+🚨 Smart money seems active around ${symbol} lately.
 
-    final_tag = random.choice(tags)
+${symbol} moved {change}% in the last 24h and is currently trading near ${price}.
 
-    post = f"""🚨 MARKET INTEL
+Volatility is slowly returning and traders are becoming emotional again.
 
-{hook()}
+Most people react after the move already happens.
 
-{intro()}
-
-Sentiment: {sentiment}
-
-{' | '.join(lines)}
-
-📊 Chart:
-{chart}
-
-💡 Trade smart & manage risk
-
-🤔 {cta()}
-
-{final_tag} #crypto
+{symbol}
 """
 
-    return post, chart_coin
+    # ================= LONG STYLE =================
+    mood = (
+        "bullish"
+        if change > 0
+        else "bearish"
+    )
 
-# ================= BINANCE =================
-def post_binance(content, api_key, index):
+    direction = (
+        "holding strong"
+        if change > 0
+        else "still looking weak"
+    )
+
+    long_post = f"""
+A lot of traders are still underestimating ${symbol} right now.
+
+${symbol} is currently trading near ${price} after moving {change}% in the last 24 hours and still looks {direction} short term.
+
+It feels like liquidity conditions are improving again while most traders remain extremely {mood} emotionally.
+
+Usually that’s when bigger moves begin.
+
+Risk management still matters the most.
+
+{symbol}
+"""
+
+    # ================= NEWS STYLE =================
+    news_post = f"""
+📢 Market sentiment around ${symbol} has started changing again.
+
+After a {change}% move in the last 24 hours, traders are watching closely to see whether momentum continues or fades near current levels.
+
+Price is currently trading around ${price}, and volatility has been increasing across the market recently.
+
+A lot of traders still seem uncertain about the next major direction.
+
+{symbol}
+"""
+
+    # ================= PSYCHOLOGY STYLE =================
+    psychology_post = f"""
+The interesting thing about crypto markets is how quickly sentiment changes.
+
+Just a few days ago people were extremely fearful, and now traders are suddenly becoming optimistic again around ${symbol}.
+
+${symbol} is trading near ${price} after moving {change}% recently.
+
+Most traders focus too much on short term candles and ignore overall market psychology.
+
+{symbol}
+"""
+
+    # ================= RANDOM STYLE =================
+    styles = [
+        short_post,
+        long_post,
+        news_post,
+        psychology_post
+    ]
+
+    return random.choice(styles).strip()
+
+# ================= BINANCE POST =================
+def post_to_binance(content, api_key):
+
     try:
-        url = "https://www.binance.com/bapi/composite/v1/public/pgc/openApi/content/add"
+
+        url = (
+            "https://www.binance.com/"
+            "bapi/composite/v1/public/pgc/openApi/content/add"
+        )
+
         headers = {
             "X-Square-OpenAPI-Key": api_key,
             "Content-Type": "application/json",
             "clienttype": "binanceSkill"
         }
 
-        r = requests.post(url, headers=headers, json={"bodyTextOnly": content}).json()
+        payload = {
+            "bodyTextOnly": content
+        }
 
-        post_id = r.get("data", {}).get("id")
-        if index < len(LAST_POST_IDS):
-            LAST_POST_IDS[index] = post_id
+        response = requests.post(
+            url,
+            headers=headers,
+            json=payload
+        )
 
-        return r.get("data", {}).get("shareLink", "Post failed")
+        data = response.json()
 
-    except:
-        return "Post failed"
+        if data.get("success"):
+
+            return (
+                True,
+                data.get("data", {}).get(
+                    "shareLink",
+                    "Posted"
+                )
+            )
+
+        return False, str(data)
+
+    except Exception as e:
+        return False, str(e)
 
 # ================= TELEGRAM =================
-def send(msg):
+def send_telegram(message):
+
     try:
-        requests.post(
-            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
-            data={"chat_id": CHAT_ID, "text": msg}
+
+        url = (
+            f"https://api.telegram.org/bot"
+            f"{TELEGRAM_TOKEN}/sendMessage"
         )
-    except:
+
+        requests.post(url, data={
+            "chat_id": CHAT_ID,
+            "text": message
+        })
+
+    except Exception:
         pass
 
-def send_image(symbol):
-    try:
-        requests.post(
-            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto",
-            data={
-                "chat_id": CHAT_ID,
-                "photo": f"https://s3.tradingview.com/snapshots/{symbol[0].lower()}/{symbol.lower()}usdt.png",
-                "caption": f"{symbol} Chart 📊"
-            }
-        )
-    except:
-        pass
-
-# ================= COMMENTS =================
-def check_comments(index):
-    if index >= len(LAST_POST_IDS):
-        return
-
-    post_id = LAST_POST_IDS[index]
-    if not post_id:
-        return
-
-    try:
-        url = "https://www.binance.com/bapi/composite/v1/public/pgc/comment/list"
-        params = {"contentId": post_id, "page": 1, "rows": 5}
-
-        res = requests.get(url, params=params).json()
-        comments = res.get("data", {}).get("list", [])
-
-        for c in comments:
-            text = c.get("content", "")
-            if text and text not in SEEN_COMMENTS:
-                SEEN_COMMENTS.add(text)
-                send(f"💬 Comment (Acc {index+1}):\n{text}")
-
-    except:
-        pass
-
-# ================= LOOP =================
+# ================= MAIN LOOP =================
 def run_bot():
+
     while True:
+
         try:
-            posts = []
 
-            for i in range(len(BINANCE_KEYS)):
-                post, sym = generate_post()
-                post += f"\n\n🔥 Variant {i+1}"
-                posts.append((post, sym))
+            print("Generating mixed human posts...")
 
-            for i, (post, sym) in enumerate(posts):
-                api_key = BINANCE_KEYS[i]
+            used_symbols = []
 
-                link = post_binance(post, api_key, i)
+            for index, key in enumerate(BINANCE_KEYS):
 
-                send(f"🚀 POSTED #{i+1}\n\n{post}\n\n🔗 {link}")
-                send_image(sym)
+                post = generate_post(
+                    used_symbols
+                )
 
-                time.sleep(20)
-                check_comments(i)
+                post += (
+                    f"\n\n🕒 "
+                    f"{datetime.utcnow().strftime('%H:%M UTC')}"
+                )
+
+                success, result = post_to_binance(
+                    post,
+                    key
+                )
+
+                if success:
+
+                    send_telegram(
+                        f"🚀 POST SUCCESS ({index+1})\n\n"
+                        f"{post}\n\n"
+                        f"🔗 {result}"
+                    )
+
+                    print("POSTED")
+
+                else:
+
+                    send_telegram(
+                        f"❌ POST FAILED ({index+1})\n\n"
+                        f"{result}"
+                    )
+
+                    print("FAILED")
 
         except Exception as e:
-            print("ERROR:", e)
+            print("MAIN ERROR:", e)
+
+        print("Sleeping...")
 
         time.sleep(POST_INTERVAL)
 
+# ================= START =================
 threading.Thread(target=run_bot).start()
 
-# ================= SERVER =================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=PORT)
