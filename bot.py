@@ -3,6 +3,8 @@ import time
 import random
 import os
 import threading
+import google.generativeai as genai
+
 from flask import Flask
 from dotenv import load_dotenv
 from datetime import datetime
@@ -13,6 +15,7 @@ load_dotenv()
 CMC_API_KEY = os.getenv("CMC_API_KEY")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 BINANCE_KEYS = [
     os.getenv("BINANCE_API_KEY_1"),
@@ -26,11 +29,19 @@ BINANCE_KEYS = [x for x in BINANCE_KEYS if x]
 POST_INTERVAL = 10800
 PORT = int(os.environ.get("PORT", 10000))
 
+# ================= GEMINI =================
+genai.configure(api_key=GEMINI_API_KEY)
+
+model = genai.GenerativeModel(
+    "gemini-2.5-flash"
+)
+
+# ================= FLASK =================
 app = Flask(__name__)
 
 @app.route("/")
 def home():
-    return "Mixed Style Binance Bot Running 🚀"
+    return "Gemini Binance Bot Running 🚀"
 
 # ================= COINS =================
 VALID_COINS = [
@@ -69,11 +80,65 @@ def get_market_data():
         return data.get("data", {})
 
     except Exception as e:
+
         print("MARKET ERROR:", e)
+
         return {}
 
-# ================= POST GENERATOR =================
-def generate_post(used_symbols):
+# ================= AI POST =================
+def generate_ai_post(
+    symbol,
+    price,
+    change
+):
+
+    prompt = f"""
+Create a completely unique Binance Feed crypto post.
+
+Rules:
+- Human style writing
+- Natural opinions
+- Creator style
+- Professional tone
+- Different structure every time
+- No hashtags
+- No markdown
+- No bullet points
+- No repeated template
+- 5 to 8 lines
+- End only with coin name
+- Mix psychology, market sentiment, volatility, trader behavior
+- Make it look like a real crypto influencer wrote it
+
+Coin: {symbol}
+Price: {price}
+24h Change: {change}%
+"""
+
+    try:
+
+        response = model.generate_content(
+            prompt
+        )
+
+        text = response.text.strip()
+
+        return text
+
+    except Exception as e:
+
+        print("AI ERROR:", e)
+
+        return (
+            f"${symbol} is getting attention "
+            f"after moving {change}% recently.\n\n"
+            f"{symbol}"
+        )
+
+# ================= GENERATE POST =================
+def generate_post(
+    used_symbols
+):
 
     data = get_market_data()
 
@@ -88,7 +153,9 @@ def generate_post(used_symbols):
     if not available:
         available = list(data.keys())
 
-    symbol = random.choice(available)
+    symbol = random.choice(
+        available
+    )
 
     used_symbols.append(symbol)
 
@@ -105,86 +172,22 @@ def generate_post(used_symbols):
         )
 
     except Exception:
+
         return "Data error"
 
-    # ================= SHORT STYLE =================
-    short_post = f"""
-🚨 Smart money seems active around ${symbol} lately.
-
-${symbol} moved {change}% in the last 24h and is currently trading near ${price}.
-
-Volatility is slowly returning and traders are becoming emotional again.
-
-Most people react after the move already happens.
-
-{symbol}
-"""
-
-    # ================= LONG STYLE =================
-    mood = (
-        "bullish"
-        if change > 0
-        else "bearish"
+    ai_post = generate_ai_post(
+        symbol,
+        price,
+        change
     )
 
-    direction = (
-        "holding strong"
-        if change > 0
-        else "still looking weak"
-    )
-
-    long_post = f"""
-A lot of traders are still underestimating ${symbol} right now.
-
-${symbol} is currently trading near ${price} after moving {change}% in the last 24 hours and still looks {direction} short term.
-
-It feels like liquidity conditions are improving again while most traders remain extremely {mood} emotionally.
-
-Usually that’s when bigger moves begin.
-
-Risk management still matters the most.
-
-{symbol}
-"""
-
-    # ================= NEWS STYLE =================
-    news_post = f"""
-📢 Market sentiment around ${symbol} has started changing again.
-
-After a {change}% move in the last 24 hours, traders are watching closely to see whether momentum continues or fades near current levels.
-
-Price is currently trading around ${price}, and volatility has been increasing across the market recently.
-
-A lot of traders still seem uncertain about the next major direction.
-
-{symbol}
-"""
-
-    # ================= PSYCHOLOGY STYLE =================
-    psychology_post = f"""
-The interesting thing about crypto markets is how quickly sentiment changes.
-
-Just a few days ago people were extremely fearful, and now traders are suddenly becoming optimistic again around ${symbol}.
-
-${symbol} is trading near ${price} after moving {change}% recently.
-
-Most traders focus too much on short term candles and ignore overall market psychology.
-
-{symbol}
-"""
-
-    # ================= RANDOM STYLE =================
-    styles = [
-        short_post,
-        long_post,
-        news_post,
-        psychology_post
-    ]
-
-    return random.choice(styles).strip()
+    return ai_post.strip()
 
 # ================= BINANCE POST =================
-def post_to_binance(content, api_key):
+def post_to_binance(
+    content,
+    api_key
+):
 
     try:
 
@@ -224,6 +227,7 @@ def post_to_binance(content, api_key):
         return False, str(data)
 
     except Exception as e:
+
         return False, str(e)
 
 # ================= TELEGRAM =================
@@ -236,10 +240,13 @@ def send_telegram(message):
             f"{TELEGRAM_TOKEN}/sendMessage"
         )
 
-        requests.post(url, data={
-            "chat_id": CHAT_ID,
-            "text": message
-        })
+        requests.post(
+            url,
+            data={
+                "chat_id": CHAT_ID,
+                "text": message
+            }
+        )
 
     except Exception:
         pass
@@ -251,11 +258,15 @@ def run_bot():
 
         try:
 
-            print("Generating mixed human posts...")
+            print(
+                "Generating AI human posts..."
+            )
 
             used_symbols = []
 
-            for index, key in enumerate(BINANCE_KEYS):
+            for index, key in enumerate(
+                BINANCE_KEYS
+            ):
 
                 post = generate_post(
                     used_symbols
@@ -291,14 +302,26 @@ def run_bot():
                     print("FAILED")
 
         except Exception as e:
-            print("MAIN ERROR:", e)
+
+            print(
+                "MAIN ERROR:",
+                e
+            )
 
         print("Sleeping...")
 
-        time.sleep(POST_INTERVAL)
+        time.sleep(
+            POST_INTERVAL
+        )
 
 # ================= START =================
-threading.Thread(target=run_bot).start()
+threading.Thread(
+    target=run_bot
+).start()
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=PORT)
+
+    app.run(
+        host="0.0.0.0",
+        port=PORT
+    )
