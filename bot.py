@@ -41,15 +41,31 @@ app = Flask(__name__)
 
 @app.route("/")
 def home():
-    return "Gemini Binance Bot Running 🚀"
+    return "AI Binance Feed Bot Running 🚀"
 
 # ================= COINS =================
-VALID_COINS = [
-    "BTC","ETH","SOL","BNB","XRP",
-    "DOGE","ADA","AVAX","LINK","DOT",
-    "MATIC","LTC","TRX","ATOM","FIL",
-    "APT","ARB","INJ","OP","SUI"
-]
+VALID_COINS = {
+    "BTC": "Bitcoin",
+    "ETH": "Ethereum",
+    "SOL": "Solana",
+    "BNB": "BNB",
+    "XRP": "XRP",
+    "DOGE": "Dogecoin",
+    "ADA": "Cardano",
+    "AVAX": "Avalanche",
+    "LINK": "Chainlink",
+    "DOT": "Polkadot",
+    "MATIC": "Polygon",
+    "LTC": "Litecoin",
+    "TRX": "TRON",
+    "ATOM": "Cosmos",
+    "FIL": "Filecoin",
+    "APT": "Aptos",
+    "ARB": "Arbitrum",
+    "INJ": "Injective",
+    "OP": "Optimism",
+    "SUI": "Sui"
+}
 
 # ================= MARKET =================
 def get_market_data():
@@ -66,7 +82,9 @@ def get_market_data():
         }
 
         params = {
-            "symbol": ",".join(VALID_COINS)
+            "symbol": ",".join(
+                VALID_COINS.keys()
+            )
         }
 
         response = requests.get(
@@ -88,6 +106,7 @@ def get_market_data():
 # ================= AI POST =================
 def generate_ai_post(
     symbol,
+    coin_name,
     price,
     change
 ):
@@ -98,19 +117,20 @@ Create a completely unique Binance Feed crypto post.
 Rules:
 - Human style writing
 - Natural opinions
-- Creator style
-- Professional tone
+- Professional crypto creator tone
 - Different structure every time
-- No hashtags
 - No markdown
 - No bullet points
 - No repeated template
 - 5 to 8 lines
-- End only with coin name
-- Mix psychology, market sentiment, volatility, trader behavior
-- Make it look like a real crypto influencer wrote it
+- Realistic psychology and market sentiment
+- Do not sound robotic
+- Make it look like a real influencer wrote it
+- End ONLY with:
+#{symbol} ${symbol}
 
-Coin: {symbol}
+Coin: {coin_name}
+Ticker: {symbol}
 Price: {price}
 24h Change: {change}%
 """
@@ -130,9 +150,9 @@ Price: {price}
         print("AI ERROR:", e)
 
         return (
-            f"${symbol} is getting attention "
+            f"{coin_name} is getting attention "
             f"after moving {change}% recently.\n\n"
-            f"{symbol}"
+            f"#{symbol} ${symbol}"
         )
 
 # ================= GENERATE POST =================
@@ -171,12 +191,17 @@ def generate_post(
             2
         )
 
+        coin_name = VALID_COINS[
+            symbol
+        ]
+
     except Exception:
 
         return "Data error"
 
     ai_post = generate_ai_post(
         symbol,
+        coin_name,
         price,
         change
     )
@@ -259,7 +284,7 @@ def run_bot():
         try:
 
             print(
-                "Generating AI human posts..."
+                "Generating AI crypto posts..."
             )
 
             used_symbols = []
